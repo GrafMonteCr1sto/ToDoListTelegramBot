@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  django:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=America/Adak
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+
+  fastapi:
+    build:
+      context: ./comments_service
+      dockerfile: Dockerfile
+    volumes:
+      - ./comments_service:/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DJANGO_SERVICE_URL=http://django:8000
+      - REDIS_URL=redis://redis:6379/1
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    volumes:
+      - ./bot:/app
+    depends_on:
+      - django
+      - fastapi
+    environment:
+      - TELEGRAM_TOKEN=7877994035:AAEjBRDHOhNiw_eymjSwKeiz-2BcHJSlqqc
+      - DJANGO_SERVICE_URL=http://django:8000
+      - FASTAPI_SERVICE_URL=http://fastapi:8001
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A todo worker -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=America/Adak
+
+volumes:
+  postgres_data: 
